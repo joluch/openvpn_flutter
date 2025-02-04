@@ -171,6 +171,19 @@ class OpenVPN {
     return _strToStage(stage ?? "disconnected");
   }
 
+  ///
+  /// Get the VPN logs
+  /// NOTE: Only works on iOS for now
+  ///
+  Future<String?> log() async {
+    if (Platform.isAndroid) {
+      throw Exception("Logs are not available on Android yet");
+    }
+
+    String? log = await _channelControl.invokeMethod("log");
+    return log;
+  }
+
   ///Get latest connection status
   Future<VpnStatus> status() {
     //Have to check if user already connected to get real data

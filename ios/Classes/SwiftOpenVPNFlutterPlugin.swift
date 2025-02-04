@@ -30,6 +30,9 @@ public class SwiftOpenVPNFlutterPlugin: NSObject, FlutterPlugin {
             case "stage":
                 result(SwiftOpenVPNFlutterPlugin.utils.currentStatus())
                 break;
+            case "log":
+                 result(UserDefaults.init(suiteName: SwiftOpenVPNFlutterPlugin.utils.groupIdentifier)?.string(forKey: "VPN_LOG"))
+                 break;
             case "initialize":
                 let providerBundleIdentifier: String? = (call.arguments as? [String: Any])?["providerBundleIdentifier"] as? String
                 let localizedDescription: String? = (call.arguments as? [String: Any])?["localizedDescription"] as? String
