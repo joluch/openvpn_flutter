@@ -139,6 +139,17 @@ public class OpenVPNFlutterPlugin implements FlutterPlugin, ActivityAware {
                     }
                     result.success(true);
                     break;
+                case "log":
+                    if (vpnHelper == null) {
+                        result.error("-1", "VPNEngine need to be initialized", "");
+                        return;
+                    }
+
+                    String log = vpnHelper.getLog();
+                
+                    result.success(log);
+
+                    break;
 
                 default:
             }
