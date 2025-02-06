@@ -176,11 +176,8 @@ class OpenVPN {
   /// NOTE: Only works on iOS for now
   ///
   Future<String?> log() async {
-    if (Platform.isAndroid) {
-      throw Exception("Logs are not available on Android yet");
-    }
-
     String? log = await _channelControl.invokeMethod("log");
+
     return log;
   }
 
