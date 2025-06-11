@@ -181,6 +181,16 @@ class OpenVPN {
     return log;
   }
 
+  Future<void> addToLog(String logMessage) async {
+    if (Platform.isAndroid) {
+      throw Exception("Logs are not available on Android yet");
+    }
+
+    await _channelControl.invokeMethod("add_to_log", {
+      "message": logMessage,
+    });
+  }
+
   ///Get latest connection status
   Future<VpnStatus> status() {
     //Have to check if user already connected to get real data
