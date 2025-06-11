@@ -191,10 +191,6 @@ class OpenVPN {
   /// Write to the VPN log
   ///
   Future<void> addToLog(String logMessage) async {
-    if (Platform.isAndroid) {
-      throw Exception("Logs are not available on Android yet");
-    }
-
     await _channelControl.invokeMethod("add_to_log", {"message": logMessage});
   }
 
