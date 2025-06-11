@@ -19,6 +19,8 @@ public class SwiftOpenVPNFlutterPlugin: NSObject, FlutterPlugin {
     public func onRegister(_ registrar: FlutterPluginRegistrar){
         let vpnControlM = FlutterMethodChannel(name: SwiftOpenVPNFlutterPlugin.METHOD_CHANNEL_VPN_CONTROL, binaryMessenger: registrar.messenger())
         let vpnStageE = FlutterEventChannel(name: SwiftOpenVPNFlutterPlugin.EVENT_CHANNEL_VPN_STAGE, binaryMessenger: registrar.messenger())
+
+        let logKey = "VPN_LOG"
         
         vpnStageE.setStreamHandler(StageHandler())
         vpnControlM.setMethodCallHandler({(call: FlutterMethodCall, result: @escaping FlutterResult) -> Void in
@@ -31,8 +33,18 @@ public class SwiftOpenVPNFlutterPlugin: NSObject, FlutterPlugin {
                 result(SwiftOpenVPNFlutterPlugin.utils.currentStatus())
                 break;
             case "log":
-                 result(UserDefaults.init(suiteName: SwiftOpenVPNFlutterPlugin.utils.groupIdentifier)?.string(forKey: "VPN_LOG"))
-                 break;
+                result(UserDefaults.init(suiteName: SwiftOpenVPNFlutterPlugin.utils.groupIdentifier)?.string(forKey: logKey))
+                break;
+            case "add_to_log":
+                let userDefaults = UserDefaults.init(suiteName: SwiftOpenVPNFlutterPlugin.utils.groupIdentifier)
+                let currentLog = userDefaults?.string(forKey: logKey)
+
+                let message: String? = (call.arguments as? [String: Any])?["message"] as? String
+                
+                userDefaults?.setValue("\(currentLog)\n\(message)")
+                
+                result(nil)
+                break;
             case "initialize":
                 let providerBundleIdentifier: String? = (call.arguments as? [String: Any])?["providerBundleIdentifier"] as? String
                 let localizedDescription: String? = (call.arguments as? [String: Any])?["localizedDescription"] as? String
