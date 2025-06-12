@@ -26,12 +26,9 @@ public class OpenVPNFlutterPlugin implements FlutterPlugin, ActivityAware {
 
     private MethodChannel vpnControlMethod;
     private EventChannel vpnStageEvent;
-    //    private EventChannel vpnStatusEvent;
     private EventChannel.EventSink vpnStageSink;
-//    private EventChannel.EventSink vpnStatusSink;
 
     private static final String EVENT_CHANNEL_VPN_STAGE = "id.laskarmedia.openvpn_flutter/vpnstage";
-    //    private static final String EVENT_CHANNEL_VPN_STATUS = "id.laskarmedia.openvpn_flutter/vpnstatus";
     private static final String METHOD_CHANNEL_VPN_CONTROL = "id.laskarmedia.openvpn_flutter/vpncontrol";
 
     private static String config = "", username = "", password = "", name = "";
@@ -156,7 +153,7 @@ public class OpenVPNFlutterPlugin implements FlutterPlugin, ActivityAware {
                         return;
                     }
 
-                    String message = call.argument("config");
+                    String message = call.argument("message");
                     vpnHelper.addToLog(message);
 
                     result.success(null);
@@ -179,7 +176,6 @@ public class OpenVPNFlutterPlugin implements FlutterPlugin, ActivityAware {
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         vpnStageEvent.setStreamHandler(null);
         vpnControlMethod.setMethodCallHandler(null);
-//        vpnStatusEvent.setStreamHandler(null);
     }
 
 
