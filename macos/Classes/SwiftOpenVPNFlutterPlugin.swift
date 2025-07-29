@@ -1,27 +1,27 @@
-import Flutter
-import UIKit
+import FlutterMacOS
+import SwiftUI
 import NetworkExtension
 
 public class SwiftOpenVPNFlutterPlugin: NSObject, FlutterPlugin {
     private static var utils : VPNUtils! = VPNUtils()
-    
+
     private static var EVENT_CHANNEL_VPN_STAGE = "id.laskarmedia.openvpn_flutter/vpnstage"
     private static var METHOD_CHANNEL_VPN_CONTROL = "id.laskarmedia.openvpn_flutter/vpncontrol"
-     
+
     public static var stage: FlutterEventSink?
     private var initialized : Bool = false
-    
+
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = SwiftOpenVPNFlutterPlugin()
         instance.onRegister(registrar)
     }
-    
+
     public func onRegister(_ registrar: FlutterPluginRegistrar){
-        let vpnControlM = FlutterMethodChannel(name: SwiftOpenVPNFlutterPlugin.METHOD_CHANNEL_VPN_CONTROL, binaryMessenger: registrar.messenger())
-        let vpnStageE = FlutterEventChannel(name: SwiftOpenVPNFlutterPlugin.EVENT_CHANNEL_VPN_STAGE, binaryMessenger: registrar.messenger())
+        let vpnControlM = FlutterMethodChannel(name: SwiftOpenVPNFlutterPlugin.METHOD_CHANNEL_VPN_CONTROL, binaryMessenger: registrar.messenger)
+        let vpnStageE = FlutterEventChannel(name: SwiftOpenVPNFlutterPlugin.EVENT_CHANNEL_VPN_STAGE, binaryMessenger: registrar.messenger)
 
         let logKey = "VPN_LOG"
-        
+
         vpnStageE.setStreamHandler(StageHandler())
         vpnControlM.setMethodCallHandler({(call: FlutterMethodCall, result: @escaping FlutterResult) -> Void in
             switch call.method {
@@ -37,12 +37,12 @@ public class SwiftOpenVPNFlutterPlugin: NSObject, FlutterPlugin {
                 break;
             case "add_to_log":
                 let userDefaults = UserDefaults.init(suiteName: SwiftOpenVPNFlutterPlugin.utils.groupIdentifier)
-                let currentLog = userDefaults?.string(forKey: logKey)
+                let currentLog = userDefaults?.string(forKey: logKey) ?? ""
 
                 let message: String? = (call.arguments as? [String: Any])?["message"] as? String
-                
+
                 userDefaults?.setValue("\(currentLog)\n\(message)", forKey: logKey)
-                
+
                 result(nil)
                 break;
             case "initialize":
@@ -97,7 +97,7 @@ public class SwiftOpenVPNFlutterPlugin: NSObject, FlutterPlugin {
                                         details: "Config can't be nulled"))
                     return
                 }
-                
+
                 SwiftOpenVPNFlutterPlugin.utils.configureVPN(config: config, username: username, password: password, completion: {(success:Error?) -> Void in
                     if(success == nil){
                         result(nil)
@@ -115,21 +115,21 @@ public class SwiftOpenVPNFlutterPlugin: NSObject, FlutterPlugin {
             }
         })
     }
-    
-    
+
+
     class StageHandler: NSObject, FlutterStreamHandler {
         func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
             SwiftOpenVPNFlutterPlugin.utils.stage = events
             return nil
         }
-        
+
         func onCancel(withArguments arguments: Any?) -> FlutterError? {
             SwiftOpenVPNFlutterPlugin.utils.stage = nil
             return nil
         }
     }
-    
-    
+
+
 }
 
 
@@ -141,7 +141,7 @@ class VPNUtils {
     var groupIdentifier : String?
     var stage : FlutterEventSink!
     var vpnStageObserver : NSObjectProtocol?
-    
+
     func loadProviderManager(completion:@escaping (_ error : Error?) -> Void)  {
         NETunnelProviderManager.loadAllFromPreferences { (managers, error)  in
             if error == nil {
@@ -152,7 +152,7 @@ class VPNUtils {
             }
         }
     }
-    
+
     func onVpnStatusChanged(notification : NEVPNStatus) {
         switch notification {
         case NEVPNStatus.connected:
@@ -178,7 +178,7 @@ class VPNUtils {
             break;
         }
     }
-    
+
     func onVpnStatusChangedString(notification : NEVPNStatus?) -> String?{
         if notification == nil {
             return "disconnected"
@@ -200,7 +200,7 @@ class VPNUtils {
             return "";
         }
     }
-    
+
     func currentStatus() -> String? {
         if self.providerManager != nil {
             return onVpnStatusChangedString(notification: self.providerManager.connection.status)}
@@ -208,7 +208,7 @@ class VPNUtils {
             return "disconnected"
         }
     }
-    
+
     func configureVPN(config: String?, username : String?,password : String?,completion:@escaping (_ error : Error?) -> Void) {
         let configData = config
         self.providerManager?.loadFromPreferences { error in
@@ -247,7 +247,7 @@ class VPNUtils {
                                     let status = nevpnconn.status
                                     self?.onVpnStatusChanged(notification: status)
                                 }
-                                
+
                                 if username != nil && password != nil{
                                     let options: [String : NSObject] = [
                                         "username": username! as NSString,
@@ -270,14 +270,14 @@ class VPNUtils {
                 })
             }
         }
-        
-        
+
+
     }
-    
+
     func stopVPN() {
         self.providerManager.connection.stopVPNTunnel();
     }
-    
+
     func getTraffictStats(){
         if let session = self.providerManager?.connection as? NETunnelProviderSession {
             do {
