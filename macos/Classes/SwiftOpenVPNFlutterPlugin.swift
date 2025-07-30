@@ -41,7 +41,7 @@ public class SwiftOpenVPNFlutterPlugin: NSObject, FlutterPlugin {
 
                 let message: String? = (call.arguments as? [String: Any])?["message"] as? String
 
-                userDefaults?.setValue("\(currentLog)\n\(message)", forKey: logKey)
+                userDefaults?.setValue("\(currentLog)\n\(message!)", forKey: logKey)
 
                 result(nil)
                 break;
