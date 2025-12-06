@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:nativewrappers/_internal/vm/lib/ffi_allocation_patch.dart';
 import 'package:flutter/services.dart';
 import 'model/vpn_status.dart';
 
@@ -91,6 +92,7 @@ class OpenVPN {
     String? groupIdentifier,
     Function(VpnStatus status)? lastStatus,
     Function(VPNStage stage)? lastStage,
+    String? windowsOpenVPNPath,
   }) async {
     if (Platform.isIOS) {
       assert(
@@ -102,24 +104,36 @@ class OpenVPN {
     }
     onVpnStatusChanged?.call(VpnStatus.empty());
     initialized = true;
-    _initializeListener();
-    return _channelControl
-        .invokeMethod("initialize", {
-          "groupIdentifier": groupIdentifier,
-          "providerBundleIdentifier": providerBundleIdentifier,
-          "localizedDescription": localizedDescription,
-        })
-        .then((value) {
-          Future.wait([
-            status().then((value) => lastStatus?.call(value)),
-            stage().then((value) {
-              if (value == VPNStage.connected && _vpnStatusTimer == null) {
-                _createTimer();
-              }
-              return lastStage?.call(value);
-            }),
-          ]);
-        });
+
+    if (Platform.isWindows) {
+      if (windowsOpenVPNPath == null) {
+        throw Exception("OpenVPN path needs to be set when using Windows");
+      }
+
+      _initializeWindows(windowsOpenVPNPath);
+
+      lastStatus?.call(VpnStatus.empty());
+      lastStage?.call(VPNStage.disconnected);
+    } else {
+      _initializeListener();
+      return _channelControl
+          .invokeMethod("initialize", {
+            "groupIdentifier": groupIdentifier,
+            "providerBundleIdentifier": providerBundleIdentifier,
+            "localizedDescription": localizedDescription,
+          })
+          .then((value) {
+            Future.wait([
+              status().then((value) => lastStatus?.call(value)),
+              stage().then((value) {
+                if (value == VPNStage.connected && _vpnStatusTimer == null) {
+                  _createTimer();
+                }
+                return lastStage?.call(value);
+              }),
+            ]);
+          });
+    }
   }
 
   ///Connect to VPN
@@ -141,8 +155,23 @@ class OpenVPN {
     List<String>? bypassPackages,
     bool certIsRequired = false,
   }) {
-    if (!initialized) throw ("OpenVPN need to be initialized");
-    if (!certIsRequired) config += "client-cert-not-required";
+    if (!initialized) {
+      throw ("OpenVPN need to be initialized");
+    }
+
+    if (Platform.isWindows) {
+      return _windowsImplementation!.connectWindows(
+        config,
+        name,
+        username: username,
+        password: password,
+        certIsRequired: certIsRequired,
+      );
+    }
+
+    if (!certIsRequired) {
+      config += "client-cert-not-required";
+    }
     _tempDateTime = DateTime.now();
 
     try {
@@ -161,6 +190,12 @@ class OpenVPN {
   ///Disconnect from VPN
   void disconnect() {
     _tempDateTime = null;
+
+    if (Platform.isWindows) {
+      _disconnectWindows();
+      return;
+    }
+
     _channelControl.invokeMethod("disconnect");
     if (_vpnStatusTimer?.isActive ?? false) {
       _vpnStatusTimer?.cancel();
@@ -182,6 +217,11 @@ class OpenVPN {
   /// Get the VPN logs
   ///
   Future<String?> log() async {
+    if (Platform.isWindows) {
+      // TODO: Implement windows logging properly.
+      return "Windows logging not yet implemented";
+    }
+
     String? log = await _channelControl.invokeMethod("log");
 
     return log;
@@ -191,6 +231,11 @@ class OpenVPN {
   /// Write to the VPN log
   ///
   Future<void> addToLog(String logMessage) async {
+    if (Platform.isWindows) {
+      _windowsLogController.add(logMessage);
+      return;
+    }
+
     await _channelControl.invokeMethod("add_to_log", {"message": logMessage});
   }
 
@@ -200,8 +245,23 @@ class OpenVPN {
     return stage().then((value) async {
       var status = VpnStatus.empty();
       if (value == VPNStage.connected) {
+        if (Platform.isWindows) {
+          final connectedOn = _tempDateTime ?? DateTime.now();
+          return VpnStatus(
+            connectedOn: connectedOn,
+            duration: _duration(DateTime.now().difference(connectedOn).abs()),
+            // TODO: Implement on Windows
+            byteIn: "0",
+            byteOut: "0",
+            packetsIn: "0",
+            packetsOut: "0",
+          );
+        }
+
         status = await _channelControl.invokeMethod("status").then((value) {
-          if (value == null) return VpnStatus.empty();
+          if (value == null) {
+            return VpnStatus.empty();
+          }
 
           if (Platform.isIOS) {
             var splitted = value.split("_");
@@ -334,5 +394,225 @@ class OpenVPN {
     ) async {
       onVpnStatusChanged?.call(await status());
     });
+  }
+
+  final _windowsLogController = StreamController<String>.broadcast();
+
+  String? _openVPNPath;
+  Process? _openVPNProcess;
+  Socket? _managementSocket;
+
+  Future<void> _initializeWindows(String openVPNPath) async {
+    _openVPNPath = openVPNPath;
+
+    if (!Platform.isWindows) {
+      throw Exception(
+        "Wrong intialization function. Only Windows support for this initialization function.",
+      );
+    }
+
+    if (_openVPNPath == null) {
+      throw Exception(
+        "OpenVPN executable not found. Please install OpenVPN or specify the path.",
+      );
+    }
+
+    final file = File(_openVPNPath!);
+    if (!await file.exists()) {
+      throw Exception("OpenVPN executable not found at: $_openVPNPath");
+    }
+  }
+
+  Future<void> connectWindows(
+    String config,
+    String name, {
+    String? username,
+    String? password,
+    bool certIsRequired = false,
+  }) async {
+    if (_openVPNProcess != null) {
+      return;
+    }
+
+    try {
+      final tempPath = Directory.systemTemp;
+      final configFile = File(
+        "${tempPath.path}\\${_randomString()}_${DateTime.now().millisecondsSinceEpoch}.ovpn",
+      );
+
+      var modifiedConfig = config;
+      if (!certIsRequired && !config.contains("client-cert-not-required")) {
+        modifiedConfig += "\nclient-cert-not-required";
+      }
+
+      final port = _randomInt(10500, 60000);
+
+      await configFile.writeAsString(modifiedConfig);
+      final args = [
+        "--config", configFile.path,
+        "--management", "127.0.0.1", "$port", // Port
+        "--management-query-passwords",
+        "--management-hold",
+        "--verb", "3",
+      ];
+
+      _openVPNProcess = await Process.start(
+        _openVPNPath!,
+        args,
+        runInShell: true,
+      );
+      _openVPNProcess!.stdout.transform(utf8.decoder).listen((data) {
+        _windowsLogController.add(data);
+        _parseOpenVPNOutput(data);
+      });
+      _openVPNProcess!.stderr.transform(utf8.decoder).listen((data) {
+        _windowsLogController.add("stderr: $data");
+      });
+      _openVPNProcess!.exitCode.then((exitCode) {
+        _windowsLogController.add("OpenVPN exited with status code: $exitCode");
+        if (_lastStage != VPNStage.disconnecting) {
+          _updateWindowsStage(VPNStage.error);
+        }
+
+        _cleanupWindows();
+        configFile.deleteSync();
+      });
+
+      // Wait for the management interface to be available
+      await Future.delayed(const Duration(seconds: 1));
+
+      try {
+        _managementSocket = await Socket.connect("127.0.0.1", port);
+        _managementSocket!.listen((data) {
+          final response = utf8.decode(data);
+          _windowsLogController.add("OpenVPN Management: $response");
+        });
+
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        _managementSocket!.write("hold release\r\n");
+        await _managementSocket!.flush();
+
+        if (username != null && password != null) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          _managementSocket!.write('username "Auth" "$username"\r\n');
+          await _managementSocket!.flush();
+
+          await Future.delayed(const Duration(milliseconds: 200));
+          _managementSocket!.write('password "Auth" "$password"\r\n');
+          await _managementSocket!.flush();
+        }
+
+        _updateWindowsStage(VPNStage.wait_connection);
+      } catch (e) {
+        _windowsLogController.add("Management interface error: $e");
+      }
+    } catch (e) {
+      _updateWindowsStage(VPNStage.error);
+      _cleanupWindows();
+      rethrow;
+    }
+  }
+
+  void _cleanupWindows() {
+    try {
+      _managementSocket?.close();
+    } catch (_) {
+      // Pass
+    }
+
+    _managementSocket = null;
+    _openVPNProcess = null;
+
+    if (_vpnStatusTimer?.isActive ?? false) {
+      _vpnStatusTimer?.cancel();
+      _vpnStatusTimer = null;
+    }
+  }
+
+  void _parseOpenVPNOutput(String output) {
+    final lines = output.split("\n");
+
+    for (final line in lines) {
+      final lower = line.toLowerCase();
+
+      if (lower.contains('initialization sequence completed')) {
+        _updateWindowsStage(VPNStage.connected);
+        _createTimer();
+      } else if (lower.contains('connecting to')) {
+        _updateWindowsStage(VPNStage.tcp_connect);
+      } else if (lower.contains('attempting to establish')) {
+        _updateWindowsStage(VPNStage.connecting);
+      } else if (lower.contains('auth') && lower.contains('succeed')) {
+        _updateWindowsStage(VPNStage.authentication);
+      } else if (lower.contains('auth') &&
+          (lower.contains('failed') || lower.contains('denied'))) {
+        _updateWindowsStage(VPNStage.denied);
+      } else if (lower.contains('connection reset') ||
+          lower.contains('connection refused')) {
+        _updateWindowsStage(VPNStage.error);
+      } else if (lower.contains('tls error')) {
+        _updateWindowsStage(VPNStage.error);
+      } else if (lower.contains('resolving')) {
+        _updateWindowsStage(VPNStage.resolve);
+      } else if (lower.contains('peer connection initiated')) {
+        _updateWindowsStage(VPNStage.authenticating);
+      } else if (lower.contains('ifconfig') || lower.contains('ipv4')) {
+        _updateWindowsStage(VPNStage.assign_ip);
+      }
+    }
+  }
+
+  void _updateWindowsStage(VPNStage stage) {
+    if (stage != _lastStage) {
+      _lastStage = stage;
+      onVpnStageChanged?.call(stage, stage.toString());
+    }
+  }
+
+  void _disconnectWindows() {
+    if (_openVPNProcess == null) {
+      return;
+    }
+
+    _updateWindowsStage(VPNStage.disconnecting);
+
+    try {
+      if (_managementSocket != null) {
+        try {
+          _managementSocket!.write("signal SIGTERM\r\n");
+          _managementSocket!.flush();
+        } catch (e) {
+          _windowsLogController.add("Error sending disconnect signal: $e");
+        }
+      }
+
+      Future.delayed(const Duration(seconds: 2)).then((_) {
+        _openVPNProcess?.kill(ProcessSignal.sigkill);
+      });
+    } catch (e) {
+      _windowsLogController.add("Error during disconnecting: $e");
+    }
+
+    _cleanupWindows();
+    _updateWindowsStage(VPNStage.disconnected);
+  }
+
+  int _randomInt(int start, int end) {
+    final rng = Random();
+    return rng.nextInt(end - start) + start;
+  }
+
+  String _randomString({int length = 32}) {
+    const chars =
+        'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz1234567890';
+    final rng = Random();
+
+    return String.fromCharCodes(
+      Iterable.generate(
+        length,
+        (_) => chars.codeUnitAt(rng.nextInt(chars.length)),
+      ),
+    );
   }
 }
