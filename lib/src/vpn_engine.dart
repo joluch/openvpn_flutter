@@ -160,7 +160,7 @@ class OpenVPN {
     }
 
     if (Platform.isWindows) {
-      return _windowsImplementation!.connectWindows(
+      return _connectWindows(
         config,
         name,
         username: username,
@@ -209,6 +209,10 @@ class OpenVPN {
 
   ///Get latest connection stage
   Future<VPNStage> stage() async {
+    if (Platform.isWindows) {
+      return _lastStage ?? VPNStage.disconnected;
+    }
+
     String? stage = await _channelControl.invokeMethod("stage");
     return _strToStage(stage ?? "disconnected");
   }
@@ -423,7 +427,7 @@ class OpenVPN {
     }
   }
 
-  Future<void> connectWindows(
+  Future<void> _connectWindows(
     String config,
     String name, {
     String? username,
