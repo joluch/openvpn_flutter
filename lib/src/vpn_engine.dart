@@ -112,7 +112,9 @@ class OpenVPN {
     String? groupIdentifier,
     Function(VpnStatus status)? lastStatus,
     Function(VPNStage stage)? lastStage,
-    String? windowsOpenVPNPath,
+    // TODO: Change this to a path
+    File? windowsOpenVPNFile,
+    File? windowsLoggingFile,
   }) async {
     if (Platform.isIOS) {
       assert(
@@ -126,11 +128,11 @@ class OpenVPN {
     initialized = true;
 
     if (Platform.isWindows) {
-      if (windowsOpenVPNPath == null) {
+      if (windowsOpenVPNFile == null) {
         throw Exception("OpenVPN path needs to be set when using Windows");
       }
 
-      _initializeWindows(windowsOpenVPNPath);
+      await _initializeWindows(windowsOpenVPNFile, windowsLoggingFile);
 
       lastStatus?.call(VpnStatus.empty());
       lastStage?.call(VPNStage.disconnected);
@@ -455,8 +457,8 @@ class OpenVPN {
   Socket? _managementSocket;
   File? _windowsLogFile;
 
-  Future<void> _initializeWindows(String openVPNPath) async {
-    _openVPNPath = openVPNPath;
+  Future<void> _initializeWindows(File openVPNFile, File? logFile) async {
+    _openVPNPath = openVPNFile.path;
 
     if (!Platform.isWindows) {
       throw Exception(
@@ -475,11 +477,14 @@ class OpenVPN {
       throw Exception("OpenVPN executable not found at: $_openVPNPath");
     }
 
-    // TODO: Allow users to specify a logging path
-    final tempPath = Directory.systemTemp;
-    _windowsLogFile = File(
-      "${tempPath.path}\\vpn_${DateTime.now().millisecondsSinceEpoch}.log",
-    );
+    if (logFile != null) {
+      _windowsLogFile = logFile;
+    } else {
+      final tempPath = Directory.systemTemp;
+      _windowsLogFile = File(
+        "${tempPath.path}\\vpn_${DateTime.now().millisecondsSinceEpoch}.log",
+      );
+    }
   }
 
   Future<void> _connectWindows(
