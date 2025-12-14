@@ -130,7 +130,7 @@ class OpenVPN {
         throw Exception("OpenVPN path needs to be set when using Windows");
       }
 
-      _initializeWindows(windowsOpenVPNPath);
+      await _initializeWindows(windowsOpenVPNPath);
 
       lastStatus?.call(VpnStatus.empty());
       lastStage?.call(VPNStage.disconnected);
