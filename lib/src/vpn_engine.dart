@@ -112,7 +112,6 @@ class OpenVPN {
     String? groupIdentifier,
     Function(VpnStatus status)? lastStatus,
     Function(VPNStage stage)? lastStage,
-    // TODO: Change this to a path
     File? windowsOpenVPNFile,
     File? windowsLoggingFile,
   }) async {
